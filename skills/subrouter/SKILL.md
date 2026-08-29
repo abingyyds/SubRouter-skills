@@ -1,6 +1,6 @@
 ---
 name: subrouter
-description: Connect an AI agent (Claude Code, Cursor, Codex, etc.) to SubRouter — an OpenAI/Anthropic-compatible AI API gateway with smart routing and transparent pricing. Use this skill to authorize the agent via device flow, obtain an API key, pick a model by price, and configure the client. Triggers: "接入 SubRouter", "配置 SubRouter", "SubRouter API key", "用 SubRouter 的模型".
+description: 'Connect an AI agent (Claude Code, Cursor, Codex, etc.) to SubRouter — an OpenAI/Anthropic-compatible AI API gateway with smart routing and transparent pricing. Use this skill to authorize the agent via device flow, obtain an API key, pick a model by price, and configure the client. Triggers: "接入 SubRouter", "配置 SubRouter", "SubRouter API key", "用 SubRouter 的模型".'
 ---
 
 # SubRouter Agent Onboarding
