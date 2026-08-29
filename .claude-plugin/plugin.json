@@ -1,0 +1,12 @@
+{
+  "name": "subrouter-skills",
+  "description": "Connect an AI coding agent to SubRouter — an OpenAI/Anthropic-compatible API gateway with smart routing across providers and transparent per-token pricing",
+  "version": "1.0.0",
+  "author": {
+    "name": "SubRouter"
+  },
+  "homepage": "https://subrouter.ai",
+  "license": "MIT",
+  "keywords": ["subrouter", "api-gateway", "llm", "routing", "codex", "cursor"],
+  "skills": ["./skills/subrouter"]
+}

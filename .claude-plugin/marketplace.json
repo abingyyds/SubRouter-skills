@@ -1,0 +1,25 @@
+{
+  "name": "subrouter-skills",
+  "id": "subrouter-skills",
+  "owner": {
+    "name": "SubRouter"
+  },
+  "metadata": {
+    "description": "Skills for connecting AI agents to the SubRouter API gateway",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "subrouter-skills",
+      "source": "./",
+      "description": "Authorize an agent via device flow, obtain an API key, pick a model by price, and configure the client for SubRouter",
+      "version": "1.0.0",
+      "author": {
+        "name": "SubRouter"
+      },
+      "homepage": "https://subrouter.ai",
+      "keywords": ["subrouter", "api-gateway", "llm", "routing"],
+      "category": "workflow"
+    }
+  ]
+}
