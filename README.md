@@ -12,19 +12,44 @@ Works with Claude Code, Codex, Cursor, Zed, and any client that reads an OpenAI-
 
 ## Install
 
-As a Claude Code plugin:
+The same `SKILL.md` works in both Claude Code and Codex — they use an identical skill format.
+
+### Claude Code
 
 ```
 /plugin marketplace add abingyyds/SubRouter-skills
 /plugin install subrouter-skills@subrouter-skills
 ```
 
-Or drop the skill in by hand:
+Or by hand into `~/.claude/skills/`:
 
 ```bash
 git clone https://github.com/abingyyds/SubRouter-skills.git
 cp -r SubRouter-skills/skills/subrouter ~/.claude/skills/
 ```
+
+### Codex
+
+Codex discovers skills in `~/.codex/skills/<name>/SKILL.md`:
+
+```bash
+git clone https://github.com/abingyyds/SubRouter-skills.git
+cp -r SubRouter-skills/skills/subrouter ~/.codex/skills/
+```
+
+Single-file install without cloning:
+
+```bash
+mkdir -p ~/.codex/skills/subrouter
+curl -fsSL https://raw.githubusercontent.com/abingyyds/SubRouter-skills/main/skills/subrouter/SKILL.md \
+  -o ~/.codex/skills/subrouter/SKILL.md
+```
+
+Restart Codex afterwards so it picks the skill up.
+
+### Other clients
+
+Cursor, Zed and similar editors have no skill mechanism of their own — run the skill from Claude Code or Codex and it will write the SubRouter endpoint and key into whichever client you name.
 
 ## Use
 
