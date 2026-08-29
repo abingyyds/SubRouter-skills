@@ -80,10 +80,68 @@ Core endpoints: `POST /v1/chat/completions` (OpenAI), `POST /v1/messages` (Anthr
 
 The sk key also serves the full multimodal surface (availability depends on the model — check `/api/pricing`):
 
-- Images: `POST /v1/images/generations`, `POST /v1/images/edits` — add `/async` for async mode, then poll `GET /v1/tasks/{task_id}` (or `GET /v1/images/generations/{task_id}`)
+- Images and video: see "Step 2b" below — **use the async task API**, not the synchronous endpoints
 - Audio: `POST /v1/audio/transcriptions`, `/v1/audio/speech`, `/v1/audio/translations`
-- Video: `POST /v1/video/generations`, poll via `GET /v1/tasks/{task_id}`
 - Other: `POST /v1/embeddings`, `/v1/rerank`, `/v1/moderations`, `/v1/responses`, `GET /v1/realtime` (WebSocket)
+
+## Step 2b — Images and video: use the async task API
+
+Image and video generation take tens of seconds to several minutes. A synchronous call holds one HTTP connection for that whole time, which is what makes it fail: proxies and CDNs in front of the gateway time out at 504, and running several in parallel exhausts connections and produces 502s. **Default to async.**
+
+| Case | Use |
+|---|---|
+| Video, any model | Async — always. Never call video synchronously. |
+| Images, more than one at a time | Async |
+| Images, batch or unattended | Async |
+| A single image, user is waiting interactively | Sync is acceptable |
+
+### Submit
+
+Images — append `/async` to the normal path:
+
+```bash
+curl -s --max-redirs 0 -X POST "$BASE/v1/images/generations/async" \
+  -H "Authorization: Bearer sk-…" -H 'Content-Type: application/json' \
+  -d '{"model":"<image-model>","prompt":"…","n":1,"size":"1024x1024"}'
+```
+
+`POST /v1/images/edits/async` works the same way.
+
+Answers `202 Accepted` with a `Location: /v1/tasks/{task_id}` header and a `media.task` body:
+
+```json
+{"id":"…","object":"media.task","type":"image","action":"generate",
+ "status":"pending","progress":0,"model":"…","created_at":1756400000,
+ "result":{"images":[],"videos":[]},"usage":{"quota":1234},"error":null}
+```
+
+The `/async` facade always yields a task, even when the upstream merchant only supports synchronous calls — the gateway runs it in the background for you.
+
+Video — `POST /v1/video/generations` is already asynchronous; the request body follows the model's own schema. The response is the platform's native submit shape, but the task id in it is SubRouter's, so poll it the same way. `POST /v1/videos` is the OpenAI-compatible alias.
+
+### Poll
+
+One endpoint covers both image and video tasks:
+
+```bash
+curl -s --max-redirs 0 "$BASE/v1/tasks/<task_id>" -H "Authorization: Bearer sk-…"
+```
+
+`status` is one of `pending`, `processing`, `completed`, `failed`. Poll no faster than every 2–3 seconds, and back off for long video jobs. On `completed` read `result.images[].url` / `result.images[].b64_json` for images and `result.videos[].url` for video; on `failed` read `error.message`. `result` always carries both arrays — the one that does not match the task type stays empty rather than null.
+
+Native per-platform poll paths also exist (`GET /v1/images/generations/{task_id}`, `GET /v1/video/generations/{task_id}`, `GET /v1/videos/{task_id}`) — prefer `/v1/tasks/{task_id}`, whose shape is identical across every model.
+
+### Download the video
+
+```bash
+curl -fL "$BASE/v1/videos/<task_id>/content" -H "Authorization: Bearer sk-…" -o out.mp4
+```
+
+Upstream video URLs are often short-lived or geo-restricted; this endpoint streams the file through the gateway with the sk key. Use it instead of fetching `result.videos[].url` directly.
+
+### Listing past tasks
+
+`GET /api/task/self` (with the access token) lists the user's media tasks — useful for recovering a task id the client lost.
 
 ## Step 3 — Pick a model (and optionally a provider)
 
