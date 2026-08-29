@@ -12,7 +12,17 @@ Works with Claude Code, Codex, Cursor, Zed, and any client that reads an OpenAI-
 
 ## Install
 
-The same `SKILL.md` works in both Claude Code and Codex — they use an identical skill format.
+### Any agent (recommended)
+
+The [`skills`](https://github.com/vercel-labs/skills) CLI installs into whichever agents it detects — Claude Code, Codex, Cursor, Zed, Copilot and dozens more:
+
+```bash
+npx skills add abingyyds/SubRouter-skills
+```
+
+Add `-g` for a user-level install instead of the current project, or `--agent codex` to target one agent.
+
+The rest of this section covers each agent's native mechanism, if you would rather not use the CLI. The same `SKILL.md` works everywhere — the skill format is identical across them.
 
 ### Claude Code
 
