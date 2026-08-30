@@ -69,7 +69,7 @@ Ask the agent in plain language — the skill triggers on phrases like:
 - "帮我拿一个 SubRouter API key"
 - "用 SubRouter 上最便宜的 gpt 模型"
 
-The agent runs the device authorization, waits for you to approve it in the browser, writes the key into your client config, and shows you model prices before picking one.
+The agent first tells you what it intends to change — and which files, by path — then runs the device authorization and waits for you to approve it in the browser. It writes nothing to disk until you agree to it, and it will not repoint an already-configured client (a Codex signed in with a ChatGPT subscription, for example) unless you ask it to.
 
 ## Safety
 
@@ -78,6 +78,10 @@ The skill is written so an agent will not act on money or credentials by itself:
 - The API key is only ever sent to the SubRouter host you named, and never followed through a redirect.
 - Payment always happens in your browser. The agent never handles card numbers or crypto credentials.
 - Withdrawals, provider applications, and anything that changes listings or prices require your explicit confirmation first.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ## Contributing
 

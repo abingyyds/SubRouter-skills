@@ -14,44 +14,75 @@ Base URL: use the site the user names, or the default `https://subrouter.ai`. Al
 - Send the API key ONLY to the SubRouter host the user chose. Never to any other domain.
 - Always call with `--max-redirs 0` so a redirect can never carry the key elsewhere.
 - Never print the full key into logs or files other than the client config the user asked for. Show at most a `sk-xxxx…` prefix when confirming.
+- **Never let a credential reach stdout.** The authorization responses carry `device_code`, `key` and `access_token` in full; a bare `curl` prints them into the terminal and into the agent transcript. Always write those responses to a `0600` file and read individual fields out of it (Step 1 shows how). Report only status, `user_code`, the verification URL, and a `sk-` prefix.
 - Payment is ALWAYS done by the user in their browser. Never handle card numbers, crypto seeds, or payment credentials.
+
+## Step 0 — Agree on what you are about to change (do this first)
+
+Getting a key and rewiring someone's coding agent are different jobs. Never infer the second from a request for the first. Before Step 1, state what you understood and get a yes:
+
+1. **Goal** — which of these does the user want?
+   - *Account only*: authorize and show the key, change nothing on disk.
+   - *One-off call*: use the key in this session (env vars only, nothing persisted).
+   - *Configure an SDK/app*: write into a project the user names.
+   - *Switch a coding agent's model provider*: repoint Claude Code / Codex / Cursor at SubRouter.
+2. **Target** — exactly which file(s) you would touch, by absolute path, and whether the change is session-only or persistent.
+3. **Existing setup** — read the target first and say what is already there. If it already holds credentials or a provider, say so and ask before touching it.
+
+Default to the least invasive option that satisfies the request. When unsure, stop at *account only* and ask.
+
+**Codex specifically:** most Codex users are signed in with a ChatGPT subscription, not an API key. Do **not** write `~/.codex/config.toml`, do not overwrite `~/.codex/auth.json`, and do not replace an existing `model_provider` unless the user explicitly asked to move Codex onto SubRouter. Show them the config you would add and let them approve it.
+
+Never overwrite an existing config file. Append, or write a new profile, and tell the user how to revert.
 
 ## Step 1 — Device authorization (get an API key)
 
 Start a device authorization. `channel` identifies your agent type (`claude`, `cursor`, `codex`, …):
 
+**Every endpoint under `/api` wraps its result in an envelope.** The payload is always under `data`, alongside `success` — `{"success":true,"message":"","data":{…}}`. Some endpoints add siblings (`/api/pricing` also returns `vendors`, `usable_group`, `group_ratio`; `/api/marketplace/models` returns `total`), so read `.data` explicitly rather than assuming the whole body is the payload. On failure `success` is `false` and `message` carries the reason. Endpoints under `/v1` are the raw OpenAI/Anthropic shapes and are **not** enveloped.
+
+Write the response to a private file instead of letting it print:
+
 ```bash
+umask 077
+AUTH_TMP="$(mktemp -t subrouter-auth)"        # 0600 via umask
 curl -s --max-redirs 0 -X POST "$BASE/api/device_auth" \
   -H 'Content-Type: application/json' \
-  -d '{"channel":"claude"}'
+  -d '{"channel":"claude"}' -o "$AUTH_TMP"
 ```
 
-Response `data`:
+`.data` holds:
 
 ```json
 {
   "user_code": "ABCD-2345",
-  "device_code": "<64-char secret, keep private>",
+  "device_code": "<64-char secret — never print this>",
   "verification_url": "https://subrouter.ai/device?code=ABCD-2345",
   "expires_in": 600,
   "interval": 3
 }
 ```
 
-Show the user the `verification_url` and the `user_code`, and tell them to open it in a browser, log in (or register), check that the page shows the same code, and confirm. The code expires in 10 minutes.
+Read `.data.user_code` and `.data.verification_url` out of the file and show only those. `device_code` is the machine-held secret: anyone who sees it can claim the key before you do, so it must never be echoed.
 
-Then poll every `interval` seconds (never faster):
+Tell the user to open the URL in a browser, log in (or register), check that the page shows the same `user_code`, and confirm. The code expires in 10 minutes.
+
+Then poll every `.data.interval` seconds (never faster), again writing to the private file:
 
 ```bash
 curl -s --max-redirs 0 -X POST "$BASE/api/device_auth/poll" \
   -H 'Content-Type: application/json' \
-  -d '{"device_code":"<device_code>"}'
+  -d "{\"device_code\":\"$DEVICE_CODE\"}" -o "$AUTH_TMP"
 ```
 
-- `{"status":"authorization_pending"}` — keep waiting.
-- `{"status":"slow_down"}` — you polled too fast; wait longer.
-- `{"status":"approved","key":"sk-…","access_token":"…","base_url":"…"}` — done. Delivered exactly once; store both immediately.
+Branch on `.data.status`:
+
+- `authorization_pending` — keep waiting.
+- `slow_down` — you polled too fast; wait longer.
+- `approved` — `.data.key` (`sk-…`), `.data.access_token` and `.data.base_url` are now filled. **Delivered exactly once**: if you lose them you must redo the whole flow. Persist them from the file, never via an echo.
 - `success:false` with "invalid or expired" — the flow expired or was already consumed; start over from Step 1.
+
+Shred the file when you are done: `rm -f "$AUTH_TMP"`.
 
 You receive TWO credentials with different powers:
 
@@ -94,6 +125,19 @@ Image and video generation take tens of seconds to several minutes. A synchronou
 | Images, more than one at a time | Async |
 | Images, batch or unattended | Async |
 | A single image, user is waiting interactively | Sync is acceptable |
+
+### Billing rules (read before generating anything)
+
+**Every successful generation is billed, including retries.** These rules are not optional:
+
+- **One submission per user request.** Do not generate several variants, sizes or "improved" versions on your own initiative. If the user asked for one image, submit once.
+- **A retry is a new charge.** Before resubmitting after a failure, a timeout, or output the user disliked, say so explicitly — "this will bill another generation" — and get a yes. The only exception is a submission that failed before billing (a 4xx rejection with no task id).
+- **Never discard a billed artifact.** Every completed task's output must be written to disk before you move on, including intermediate attempts the user did not end up liking. Losing a paid image because a later attempt overwrote it is a real loss of the user's money. Use distinct filenames per task id; never reuse one path across attempts.
+- **Download completed results promptly.** Upstream result URLs expire. Fetch and save as soon as `status` is `completed`; do not leave a finished task unclaimed while you do something else.
+- **Validate before submitting**, not after: check `size`/aspect ratio, duration and model capability against `/api/pricing` first. A rejected parameter after billing is money gone.
+- **Report at the end**: how many generations were submitted, the model, the size/duration, the total cost, and the absolute path of every saved file.
+
+If the connection drops mid-flow, do not resubmit. The task already exists server-side — recover it via `GET /api/task/self` (Listing past tasks, below) and download the result. This is the main reason to prefer async: a dropped sync call loses an image you already paid for.
 
 ### Submit
 
@@ -159,7 +203,7 @@ Choose by the user's stated preference (cheapest, specific vendor/provider, capa
 
 ## Step 4 — Top up (user does this, not you)
 
-The account starts with no balance. Send the user to `$BASE/console/topup` and wait. Check balance and usage with the sk key itself:
+**Check the balance before assuming anything.** A freshly registered account has none, but a returning user re-authorizing an existing account may already be funded. Only point the user at `$BASE/console/topup` once you have seen a zero/insufficient balance or received a 402. Top-up always happens in the user's browser.
 
 ```bash
 curl -s --max-redirs 0 "$BASE/v1/dashboard/billing/subscription" -H "Authorization: Bearer sk-…"
