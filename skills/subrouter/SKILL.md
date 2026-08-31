@@ -79,15 +79,16 @@ Branch on `.data.status`:
 
 - `authorization_pending` — keep waiting.
 - `slow_down` — you polled too fast; wait longer.
-- `approved` — `.data.key` (`sk-…`), `.data.access_token` and `.data.base_url` are now filled. **Delivered exactly once**: if you lose them you must redo the whole flow. Persist them from the file, never via an echo.
+- `approved` — `.data.key` (`sk-…`), `.data.access_token`, `.data.user_id` and `.data.base_url` are now filled. **Delivered exactly once**: if you lose them you must redo the whole flow. Persist them from the file, never via an echo.
 - `success:false` with "invalid or expired" — the flow expired or was already consumed; start over from Step 1.
 
 Shred the file when you are done: `rm -f "$AUTH_TMP"`.
 
-You receive TWO credentials with different powers:
+You receive three values, with different powers:
 
 - `key` (`sk-…`) — the **relay token**: model calls, `/v1/models`, billing lookups. Put this in client configs.
 - `access_token` — the **account management credential**: full management API access under the user's account. Never put this in a client config; use it only for the management calls below, and guard it even more carefully than the sk key.
+- `user_id` — the numeric account id. Not a secret, but **every management call fails without it** (see below). Store it next to the access token.
 
 ## Step 2 — Configure the client
 
@@ -212,36 +213,42 @@ curl -s --max-redirs 0 "$BASE/v1/dashboard/billing/usage" -H "Authorization: Bea
 
 ## Account management (uses `access_token`)
 
-Management endpoints authenticate with `Authorization: Bearer <access_token>` (the `Bearer ` prefix is optional). Examples:
+Management endpoints need **two** headers, not one:
+
+- `Authorization: Bearer <access_token>` (the `Bearer ` prefix is optional)
+- `New-Api-User: <user_id>` — the numeric account id from Step 1
+
+Both are mandatory. Sending only the first returns `401 无权进行此操作，未提供 New-Api-User`, and a `user_id` that does not match the access token's owner returns `401 New-Api-User 与登录用户不匹配` — so it cannot be guessed. This applies to every `/api` management endpoint below, including the provider (商家) ones.
 
 ```bash
 AUTH='Authorization: Bearer <access_token>'
+AUTH_USER='New-Api-User: <user_id>'
 
 # Account info & balance
-curl -s --max-redirs 0 "$BASE/api/user/self" -H "$AUTH"
+curl -s --max-redirs 0 "$BASE/api/user/self" -H "$AUTH" -H "$AUTH_USER"
 
 # Usage reconciliation ("where did my money go")
-curl -s --max-redirs 0 "$BASE/api/log/self?p=1&page_size=20" -H "$AUTH"   # per-call logs
-curl -s --max-redirs 0 "$BASE/api/log/self/stat" -H "$AUTH"               # totals
-curl -s --max-redirs 0 "$BASE/api/data/self" -H "$AUTH"                   # per-day quota usage
-curl -s --max-redirs 0 "$BASE/api/task/self" -H "$AUTH"                   # async media tasks
+curl -s --max-redirs 0 "$BASE/api/log/self?p=1&page_size=20" -H "$AUTH" -H "$AUTH_USER"   # per-call logs
+curl -s --max-redirs 0 "$BASE/api/log/self/stat" -H "$AUTH" -H "$AUTH_USER"               # totals
+curl -s --max-redirs 0 "$BASE/api/data/self" -H "$AUTH" -H "$AUTH_USER"                   # per-day quota usage
+curl -s --max-redirs 0 "$BASE/api/task/self" -H "$AUTH" -H "$AUTH_USER"                   # async media tasks
 
 # Redeem a voucher code the user already has (this is NOT payment)
-curl -s --max-redirs 0 -X POST "$BASE/api/user/self/topup" -H "$AUTH" \
+curl -s --max-redirs 0 -X POST "$BASE/api/user/self/topup" -H "$AUTH" -H "$AUTH_USER" \
   -H 'Content-Type: application/json' -d '{"key":"<redemption-code>"}'
 
 # Referral: the user's invite code and earnings
-curl -s --max-redirs 0 "$BASE/api/user/self/aff" -H "$AUTH"               # invite code → share $BASE/register?aff=<code>
-curl -s --max-redirs 0 "$BASE/api/user/self/aff_dashboard" -H "$AUTH"
-curl -s --max-redirs 0 "$BASE/api/user/self/aff_earnings" -H "$AUTH"
+curl -s --max-redirs 0 "$BASE/api/user/self/aff" -H "$AUTH" -H "$AUTH_USER"               # invite code → share $BASE/register?aff=<code>
+curl -s --max-redirs 0 "$BASE/api/user/self/aff_dashboard" -H "$AUTH" -H "$AUTH_USER"
+curl -s --max-redirs 0 "$BASE/api/user/self/aff_earnings" -H "$AUTH" -H "$AUTH_USER"
 # Move referral earnings into the usable balance (confirm amount with the user first)
 # NOTE: quota is in internal units, 500000 = $1 — never pass a dollar number directly
-curl -s --max-redirs 0 -X POST "$BASE/api/user/self/aff_transfer" -H "$AUTH" \
+curl -s --max-redirs 0 -X POST "$BASE/api/user/self/aff_transfer" -H "$AUTH" -H "$AUTH_USER" \
   -H 'Content-Type: application/json' -d '{"quota":<amount-in-quota-units>}'
 
 # List / create API tokens
-curl -s --max-redirs 0 "$BASE/api/token/" -H "$AUTH"
-curl -s --max-redirs 0 -X POST "$BASE/api/token/" -H "$AUTH" \
+curl -s --max-redirs 0 "$BASE/api/token/" -H "$AUTH" -H "$AUTH_USER"
+curl -s --max-redirs 0 -X POST "$BASE/api/token/" -H "$AUTH" -H "$AUTH_USER" \
   -H 'Content-Type: application/json' \
   -d '{"name":"my-project","expired_time":-1,"unlimited_quota":true}'
 ```
@@ -251,7 +258,7 @@ curl -s --max-redirs 0 -X POST "$BASE/api/token/" -H "$AUTH" \
 A token can be restricted to specific models, to specific providers (商家) per model, and to a price ceiling. Use this when the user says "只用某商家" or "只允许这个模型":
 
 ```bash
-curl -s --max-redirs 0 -X POST "$BASE/api/token/" -H "$AUTH" \
+curl -s --max-redirs 0 -X POST "$BASE/api/token/" -H "$AUTH" -H "$AUTH_USER" \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "sonnet-via-acme",
@@ -275,12 +282,12 @@ The user's account can apply to become a provider and then manage its own channe
 
 ```bash
 # Apply to become a provider (platform review may apply)
-curl -s --max-redirs 0 -X POST "$BASE/api/provider/register" -H "$AUTH" \
+curl -s --max-redirs 0 -X POST "$BASE/api/provider/register" -H "$AUTH" -H "$AUTH_USER" \
   -H 'Content-Type: application/json' -d '{...}'
 
 # After approval, provider management lives under /api/provider/*
-curl -s --max-redirs 0 "$BASE/api/provider/self" -H "$AUTH"      # provider profile
-curl -s --max-redirs 0 "$BASE/api/provider/models" -H "$AUTH"    # listed models
+curl -s --max-redirs 0 "$BASE/api/provider/self" -H "$AUTH" -H "$AUTH_USER"      # provider profile
+curl -s --max-redirs 0 "$BASE/api/provider/models" -H "$AUTH" -H "$AUTH_USER"    # listed models
 # List a model: POST /api/provider/models — GET first to learn the field shape
 # Channels: /api/provider/channels (GET/POST/PUT/DELETE)
 
@@ -290,13 +297,13 @@ curl -s --max-redirs 0 "$BASE/api/provider/models" -H "$AUTH"    # listed models
 # POST /api/provider/models/batch-delete   — remove in bulk
 
 # Channel debugging
-curl -s --max-redirs 0 "$BASE/api/provider/channel/test" -H "$AUTH"
-curl -s --max-redirs 0 "$BASE/api/provider/channel/fetch_models" -H "$AUTH"
+curl -s --max-redirs 0 "$BASE/api/provider/channel/test" -H "$AUTH" -H "$AUTH_USER"
+curl -s --max-redirs 0 "$BASE/api/provider/channel/fetch_models" -H "$AUTH" -H "$AUTH_USER"
 
 # Earnings (read-only)
-curl -s --max-redirs 0 "$BASE/api/provider/earnings/summary" -H "$AUTH"
-curl -s --max-redirs 0 "$BASE/api/provider/earnings" -H "$AUTH"
-curl -s --max-redirs 0 "$BASE/api/provider/payouts" -H "$AUTH"   # payout history
+curl -s --max-redirs 0 "$BASE/api/provider/earnings/summary" -H "$AUTH" -H "$AUTH_USER"
+curl -s --max-redirs 0 "$BASE/api/provider/earnings" -H "$AUTH" -H "$AUTH_USER"
+curl -s --max-redirs 0 "$BASE/api/provider/payouts" -H "$AUTH" -H "$AUTH_USER"   # payout history
 ```
 
 Withdrawing money (`POST /api/provider/payout`) is a funds operation: do NOT call it yourself — send the user to the provider console in their browser.
