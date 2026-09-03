@@ -1,6 +1,6 @@
 ---
 name: subrouter
-description: 'Connect an AI agent (Claude Code, Cursor, Codex, etc.) to SubRouter — an OpenAI/Anthropic-compatible AI API gateway with smart routing and transparent pricing. Use this skill to authorize the agent via device flow, obtain an API key, pick a model by price, and configure the client. Triggers: "接入 SubRouter", "配置 SubRouter", "SubRouter API key", "用 SubRouter 的模型".'
+description: 'Connect an AI agent (Claude Code, Cursor, Codex, etc.) to SubRouter — an OpenAI/Anthropic-compatible AI API gateway with smart routing and transparent pricing. Use this skill to authorize the agent via device flow, obtain an API key, pick a model by price, and configure the client. Also lets a distributor station owner (分站站长) run their station: list or delist models, set prices, manage packages and settings. Triggers: "接入 SubRouter", "配置 SubRouter", "SubRouter API key", "用 SubRouter 的模型", "管理我的分站", "分站上架", "分站套餐".'
 ---
 
 # SubRouter Agent Onboarding
@@ -310,9 +310,158 @@ Withdrawing money (`POST /api/provider/payout`) is a funds operation: do NOT cal
 
 Before submitting a provider application or changing anything that affects listings, prices, or money, state exactly what you are about to send and get the user's explicit confirmation. For bulk operations, show the full change list (model names, prices, statuses) first.
 
+## Running a distributor station (分站站长)
+
+A distributor (分销商) is a user who runs their own SubRouter-powered station. Station management lives under `/api/distributor/*` and uses the same `access_token` + `New-Api-User` pair as the account calls above; the account must already hold the distributor role. Becoming a distributor, and renewing or buying a discount for the station, is paid in the browser at `$BASE/console/distributor` — never call those endpoints (`/api/distributor/register/pay`, `/subscription/renew`, `/discount/buy`).
+
+**Always call the main site.** `$BASE` here is the main SubRouter host (`https://subrouter.ai` unless the user names another main site), never the station's own domain: a station domain refuses every `/api` path except `/api/dist/*` with `403 该接口不能通过分站域名访问`. Run Step 1 against the main site too.
+
+Read the station before changing anything, and re-read before every write — several PUT endpoints replace the whole object:
+
+```bash
+curl -s --max-redirs 0 "$BASE/api/distributor/self" -H "$AUTH" -H "$AUTH_USER"        # name, domain, display_mode, enable_all_models, global_markup, registration_mode, …
+curl -s --max-redirs 0 "$BASE/api/distributor/dashboard" -H "$AUTH" -H "$AUTH_USER"   # traffic, revenue, customer counts
+```
+
+### Which listing mode the station is in
+
+`enable_all_models` on `/self` decides how models reach the shelf, and the two modes use different endpoints. Check it first and use the matching family.
+
+| `enable_all_models` | How models get listed | Endpoints |
+|---|---|---|
+| `true` (全站上架) | Every model of every provider the owner subscribes to is listed automatically; the owner only excludes or reprices | `/models/global*` |
+| `false` (manual) | The owner lists models one by one | `/models`, `/providers/:id/models` |
+
+Both modes share one precondition: the owner's own account must subscribe to a provider on the main marketplace before any of its models can be listed, or the API answers `该商家不在当前分站订阅范围内`. `GET /api/distributor/providers?keyword=&page=1&page_size=50` lists only the subscribed providers. To add one, `POST /api/marketplace/subscribe` with `{"provider_id":<id>}` (ids come from `GET /api/marketplace/providers`); `DELETE /api/marketplace/subscribe/<id>` reverses it. Subscribing costs nothing by itself.
+
+`provider_id` values returned by these endpoints may be virtual ids that stand for a shared plan rather than a provider. Pass them through unchanged; never construct one.
+
+### 上架 / 下架 with 全站上架 on
+
+```bash
+curl -s --max-redirs 0 "$BASE/api/distributor/models/global" -H "$AUTH" -H "$AUTH_USER"
+# items: provider_id, provider_slug, provider_name, model_name, display_name, enabled,
+#        input_price, output_price, fixed_price, price_currency, has_custom_price, custom_*
+
+# 下架 one model (adds an exclusion); "enabled": true restores it
+curl -s --max-redirs 0 -X PUT "$BASE/api/distributor/models/global/status" -H "$AUTH" -H "$AUTH_USER" \
+  -H 'Content-Type: application/json' -d '{"provider_id":12,"model_name":"gpt-5.4","enabled":false}'
+
+# a whole provider at once
+curl -s --max-redirs 0 -X PUT "$BASE/api/distributor/models/global/provider-status" -H "$AUTH" -H "$AUTH_USER" \
+  -H 'Content-Type: application/json' -d '{"provider_id":12,"enabled":false}'
+
+# override the price of one model; omit a field to leave it alone
+curl -s --max-redirs 0 -X PUT "$BASE/api/distributor/models/global/price" -H "$AUTH" -H "$AUTH_USER" \
+  -H 'Content-Type: application/json' \
+  -d '{"provider_id":12,"model_name":"gpt-5.4","custom_input_price":2.5,"custom_output_price":10}'
+# alternatives: "custom_fixed_price" (per-call models), "custom_price_multiplier";
+# {"provider_id":12,"model_name":"gpt-5.4","clear_custom_pricing":true} returns to provider price + markup
+```
+
+### 上架 / 下架 in manual mode
+
+```bash
+curl -s --max-redirs 0 "$BASE/api/distributor/models" -H "$AUTH" -H "$AUTH_USER"                       # what is listed now (id, provider_id, model_name, display_name, markup_percent, custom_*_price, enabled, sort_order)
+curl -s --max-redirs 0 "$BASE/api/distributor/providers/12/models" -H "$AUTH" -H "$AUTH_USER"          # a provider's catalogue, marked with what the station already lists
+
+# 上架 several models from one provider
+curl -s --max-redirs 0 -X POST "$BASE/api/distributor/providers/12/models" -H "$AUTH" -H "$AUTH_USER" \
+  -H 'Content-Type: application/json' \
+  -d '{"models":[{"model_name":"gpt-5.4","display_name":""},{"model_name":"gpt-5.4-mini","display_name":""}]}'
+
+# 上架 one model with its own markup
+curl -s --max-redirs 0 -X POST "$BASE/api/distributor/models" -H "$AUTH" -H "$AUTH_USER" \
+  -H 'Content-Type: application/json' \
+  -d '{"provider_id":12,"model_name":"gpt-5.4","display_name":"","markup_percent":20,"enabled":true,"sort_order":0}'
+
+# edit: send the full record from GET /models with your changes. display_name, markup_percent,
+# custom_input_price, custom_output_price and sort_order are overwritten by whatever you send;
+# "enabled" only changes when present.
+curl -s --max-redirs 0 -X PUT "$BASE/api/distributor/models/<id>" -H "$AUTH" -H "$AUTH_USER" \
+  -H 'Content-Type: application/json' -d '{...full record..., "enabled": false}'
+
+# 下架 for good: remove the record. PUT enabled:false hides it but keeps the configuration.
+curl -s --max-redirs 0 -X DELETE "$BASE/api/distributor/models/<id>" -H "$AUTH" -H "$AUTH_USER"
+```
+
+### Pricing rules
+
+- `global_markup` (set via `PUT /self`) is a percentage — `30` means +30% — applied to every listed model without its own price.
+- Per model, `markup_percent` (`0` = use the global value) or explicit `custom_input_price` / `custom_output_price`. Custom prices are per million tokens in the currency the listing reports as `price_currency`; read it before setting a number.
+- The change list you show the user must carry the effective price after markup, not just the percentage.
+
+### 套餐 (packages)
+
+```bash
+curl -s --max-redirs 0 "$BASE/api/distributor/packages" -H "$AUTH" -H "$AUTH_USER"
+
+curl -s --max-redirs 0 -X POST "$BASE/api/distributor/packages" -H "$AUTH" -H "$AUTH_USER" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"入门包","description":"","type":"quota","price":99,"original_price":129,
+       "quota_amount":50000000,"duration":30,"quota_reset_period":"never","enabled":true,"sort_order":0}'
+```
+
+Server rules: `name` required, at most 128 characters; `type` is `quota`, `daily`, `weekly` or `monthly`; `price` in CNY, must be > 0; `original_price` ≥ 0 (the strike-through price); `quota_amount` > 0 **in quota units, 500000 = $1** — a "$100 package" is `50000000`; `duration` in days, defaults to 30; `quota_reset_period` is `never`, `daily`, `weekly` or `monthly`.
+
+`PUT /api/distributor/packages/<id>` replaces every field — send the full object from GET with the change applied. `DELETE /api/distributor/packages/<id>` removes it.
+
+Sold packages: `GET /api/distributor/package-subscriptions` lists them; `POST /package-subscriptions/<id>/reset-usage` and `POST /package-subscriptions/<id>/invalidate` change what a paying customer receives — name the customer and the effect, then get a yes.
+
+### Station settings
+
+`PUT /api/distributor/self` is a partial update: only the fields you send change. The ones an owner usually asks for: `name`, `domain`, `logo`, `favicon`, `announcement`, `display_mode` (`simple` or `full`), `registration_mode` (`open`, `invite`, `closed`), `global_markup`, `enable_all_models`, `enable_topup`, `hide_provider_info`, `currency_display`. Read `GET /self`, show each key as old → new, then write.
+
+Never set the payment, mail or OAuth credential fields (`epay_*`, `stripe_*`, `creem_*`, `smtp_*`, `*_oauth_client_id`, `*_oauth_client_secret`, `theme_password`) — the owner enters those in the console.
+
+### Customers, key groups, shared subscriptions, official channels
+
+```bash
+# Customers (the station's end users)
+curl -s --max-redirs 0 "$BASE/api/distributor/customers?page=1&page_size=20&keyword=" -H "$AUTH" -H "$AUTH_USER"
+curl -s --max-redirs 0 "$BASE/api/distributor/customers/<userId>/dashboard" -H "$AUTH" -H "$AUTH_USER"
+# status 1 = enabled, 2 = banned — confirm with the owner first
+curl -s --max-redirs 0 -X PUT "$BASE/api/distributor/customers/<userId>/status" -H "$AUTH" -H "$AUTH_USER" \
+  -H 'Content-Type: application/json' -d '{"status":2}'
+
+# Key groups (bundles of listed models sold under one label)
+curl -s --max-redirs 0 "$BASE/api/distributor/key-groups" -H "$AUTH" -H "$AUTH_USER"
+curl -s --max-redirs 0 "$BASE/api/distributor/key-groups/models" -H "$AUTH" -H "$AUTH_USER"      # models a group may include
+# POST /key-groups and PUT /key-groups/<id> take the group record: name, vendor_category, description,
+# model_limits (comma-separated, only models from /key-groups/models), subrouter_providers (comma-separated slugs),
+# price_discount (0.8 = 20% off), is_private, is_recommended, enabled, sort_order.
+# Members of a private group: GET/POST /key-groups/<id>/users, DELETE /key-groups/<id>/users/<userId>
+
+# Shared subscriptions (进货 a shared plan, then list it)
+curl -s --max-redirs 0 "$BASE/api/distributor/shared-subscriptions" -H "$AUTH" -H "$AUTH_USER"
+# PUT /shared-subscriptions/<id> {"purchased":true,"enabled":true,"markup_percent":0,"sort_order":0}
+#   "purchased": true records the procurement and activates the plan on the owner's account — confirm first;
+#   "enabled" cannot be true unless "purchased" is.
+# PUT /shared-subscriptions/<id>/models {"model_name":"…","enabled":true,"markup_percent":0,"sort_order":0}
+#   (also custom_input_price / custom_output_price / custom_fixed_price / custom_price_multiplier)
+# PUT /shared-subscriptions/<id>/models/bulk-status — enable or disable many at once
+
+# Official channels offered by the platform
+curl -s --max-redirs 0 "$BASE/api/distributor/official-channels" -H "$AUTH" -H "$AUTH_USER"
+# PUT /official-channels/<id> — GET first to learn the record shape
+```
+
+Read-only endpoints for questions like "how is the station doing": `GET /logs` (`p`, `page_size`, `type`, `start_timestamp`, `end_timestamp`, `model_name`, `username`, `token_name`), `/logs/stat`, `/earnings`, `/earnings/summary`, `/earnings/payouts`, `/topups`, `/redemptions`, `/invoices`, `/sub-distributors`, `/package-fund`.
+
+### Station endpoints you must not call
+
+These move money or credentials. Say so, and send the owner to `$BASE/console/distributor`:
+
+- `POST /earnings/withdraw`, `POST /package-fund/topup`, `POST /package-fund/withdraw`, `PUT /package-fund/settings`
+- `POST /redemptions` — creating redemption codes issues balance
+- `PUT /customers/<userId>/password`, `PUT /customers/<userId>/commission`, `PUT /customers/<userId>/commission-application`
+- `/saas-activation-token` (`GET`, `rotate`, `DELETE`), `POST /smtp/test`, `PUT /invoices/<id>`
+
+Before any other write under `/api/distributor`, list exactly what will change — model names with effective prices, package fields, setting keys as old → new, customer ids — and get an explicit yes. A bulk 上架 or 下架 shows the complete model list first, never a count.
+
 ## More capabilities (not detailed here)
 
-The platform also offers shared subscriptions, an official-key market, invoices, 2FA/passkey management, and payment initiation. These involve credentials, purchases, or account security — do not drive them via API. When the user asks, point them to the web console (`$BASE/console`).
+The platform also offers shared subscriptions for end users, an official-key market, invoices, 2FA/passkey management, and payment initiation. These involve credentials, purchases, or account security — do not drive them via API. When the user asks, point them to the web console (`$BASE/console`).
 
 ## Troubleshooting
 
@@ -323,4 +472,4 @@ The platform also offers shared subscriptions, an official-key market, invoices,
 
 ## Destructive actions
 
-Deleting tokens, changing account settings, or anything under `/console` management APIs: always confirm with the user first.
+Deleting tokens, changing account settings, anything under `/console` management APIs, and every write under `/api/distributor`: always confirm with the user first.
