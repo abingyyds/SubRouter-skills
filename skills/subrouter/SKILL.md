@@ -23,7 +23,7 @@ Getting a key and rewiring someone's coding agent are different jobs. Never infe
 
 1. **Goal** — which of these does the user want?
    - *Account only*: authorize and show the key, change nothing on disk.
-   - *One-off call*: use the key in this session (env vars only, nothing persisted).
+   - *One-off call*: use the key in this session via env vars; nothing is written into any config, but the credential file from Step 1 stays (see Step 1) unless the user asks you to delete it.
    - *Configure an SDK/app*: write into a project the user names.
    - *Switch a coding agent's model provider*: repoint Claude Code / Codex / Cursor at SubRouter.
 2. **Target** — exactly which file(s) you would touch, by absolute path, and whether the change is session-only or persistent.
@@ -37,7 +37,7 @@ Never overwrite an existing config file. Append, or write a new profile, and tel
 
 ## Step 1 — Device authorization (get an API key)
 
-**Before starting a new flow, look for a credential you already saved** (the file or env var you persisted in a previous run). If `GET $BASE/v1/models` with that `sk-` key returns 200, reuse it and skip to Step 2; only authorize again when there is no saved key or it no longer works.
+**Before starting a new flow, look for a credential you already saved** (`~/.subrouter/credentials.json` or whatever file/env var you persisted in a previous run). If `GET $BASE/v1/models` with that `sk-` key returns 200, reuse it and skip to Step 2; only authorize again when there is no saved key or it no longer works.
 
 Start a device authorization. `channel` identifies your agent type (`claude`, `cursor`, `codex`, …). Re-authorizing with the same `channel` returns the account's existing enabled `Agent 授权令牌 (<channel>)` token instead of creating another one, so repeated logins do not pile up keys — but the key is still delivered only through this flow, so keep it once you have it:
 
@@ -84,7 +84,13 @@ Branch on `.data.status`:
 - `approved` — `.data.key` (`sk-…`), `.data.access_token`, `.data.user_id` and `.data.base_url` are now filled. **Delivered exactly once**: if you lose them you must redo the whole flow. Persist them from the file, never via an echo.
 - `success:false` with "invalid or expired" — the flow expired or was already consumed; start over from Step 1.
 
-Shred the file when you are done: `rm -f "$AUTH_TMP"`.
+Keep the credential. Move the approved response out of the temp path into a
+stable private file the next session can find, for example
+`install -m 600 "$AUTH_TMP" ~/.subrouter/credentials.json` (create the directory
+with `mkdir -p -m 700 ~/.subrouter`). **Do not delete it when the task ends**:
+the token does not expire, and deleting it is what forces the user through the
+browser approval again next time. Remove the file only when the user asks you
+to, and say which file you removed.
 
 You receive three values, with different powers:
 
