@@ -37,7 +37,9 @@ Never overwrite an existing config file. Append, or write a new profile, and tel
 
 ## Step 1 — Device authorization (get an API key)
 
-Start a device authorization. `channel` identifies your agent type (`claude`, `cursor`, `codex`, …):
+**Before starting a new flow, look for a credential you already saved** (the file or env var you persisted in a previous run). If `GET $BASE/v1/models` with that `sk-` key returns 200, reuse it and skip to Step 2; only authorize again when there is no saved key or it no longer works.
+
+Start a device authorization. `channel` identifies your agent type (`claude`, `cursor`, `codex`, …). Re-authorizing with the same `channel` returns the account's existing enabled `Agent 授权令牌 (<channel>)` token instead of creating another one, so repeated logins do not pile up keys — but the key is still delivered only through this flow, so keep it once you have it:
 
 **Every endpoint under `/api` wraps its result in an envelope.** The payload is always under `data`, alongside `success` — `{"success":true,"message":"","data":{…}}`. Some endpoints add siblings (`/api/pricing` also returns `vendors`, `usable_group`, `group_ratio`; `/api/marketplace/models` returns `total`), so read `.data` explicitly rather than assuming the whole body is the payload. On failure `success` is `false` and `message` carries the reason. Endpoints under `/v1` are the raw OpenAI/Anthropic shapes and are **not** enveloped.
 
