@@ -291,6 +291,11 @@ curl -s --max-redirs 0 -X POST "$BASE/api/provider/register" -H "$AUTH" -H "$AUT
 curl -s --max-redirs 0 "$BASE/api/provider/self" -H "$AUTH" -H "$AUTH_USER"      # provider profile
 curl -s --max-redirs 0 "$BASE/api/provider/models" -H "$AUTH" -H "$AUTH_USER"    # listed models
 # List a model: POST /api/provider/models — GET first to learn the field shape
+# Edit a model: PUT /api/provider/models/<id>. Pricing is all-or-nothing: to change
+# the price send the COMPLETE billing block (billing_mode plus billing_expr, or
+# input_price/output_price/fixed_price plus price_currency); to leave the price
+# alone send NO pricing field at all. A body with only some of them is read as a
+# price change with the missing ones as 0 and goes into price review.
 # Channels: /api/provider/channels (GET/POST/PUT/DELETE)
 
 # Bulk model maintenance (e.g. syncing upstream price changes)
