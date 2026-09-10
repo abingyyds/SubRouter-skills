@@ -309,9 +309,9 @@ curl -s --max-redirs 0 "$BASE/api/provider/models" -H "$AUTH" -H "$AUTH_USER"   
 # POST /api/provider/models/batch-status   — enable/disable in bulk
 # POST /api/provider/models/batch-delete   — remove in bulk
 
-# Channel debugging
-curl -s --max-redirs 0 "$BASE/api/provider/channel/test" -H "$AUTH" -H "$AUTH_USER"
-curl -s --max-redirs 0 "$BASE/api/provider/channel/fetch_models" -H "$AUTH" -H "$AUTH_USER"
+# Channel debugging — <id> is a channel id from GET /api/provider/channels
+curl -s --max-redirs 0 "$BASE/api/provider/channels/<id>/test" -H "$AUTH" -H "$AUTH_USER"
+curl -s --max-redirs 0 "$BASE/api/provider/channels/<id>/fetch_models" -H "$AUTH" -H "$AUTH_USER"
 
 # Earnings (read-only)
 curl -s --max-redirs 0 "$BASE/api/provider/earnings/summary" -H "$AUTH" -H "$AUTH_USER"
