@@ -427,6 +427,21 @@ Sold packages: `GET /api/distributor/package-subscriptions` lists them; `POST /p
 
 Never set the payment, mail or OAuth credential fields (`epay_*`, `stripe_*`, `creem_*`, `smtp_*`, `*_oauth_client_id`, `*_oauth_client_secret`, `theme_password`) — the owner enters those in the console.
 
+Routing sources and markup live on the same endpoint and decide what the station earns, so read them back before and after a change:
+
+| Field | Default | Effect |
+| --- | --- | --- |
+| `include_official_channels` | `true` | Whether station keys may route to platform official channels |
+| `include_shared_subscriptions` | `true` | Whether station keys may route to subscription-sharing lines |
+| `include_provider_self` | `true` | Whether station keys may route to a provider's own listings |
+| `include_cache_hit_rate` | `true` | Weigh cache hit rate when ordering candidates |
+| `subrouter_route_preference` | platform default | Candidate ordering, e.g. `price_first`, `stability_first` |
+| `shared_subscription_markup` | `0` | Markup applied to shared-subscription routes, 0-10000 (percent) |
+
+Every row above except `shared_subscription_markup` only takes effect when `display_mode` is `simple`. Under `full` the station value is ignored and each key carries its own copy of it, so writing the station value there returns success but changes no routing.
+
+Turning a source off removes every model that only that source provided — those calls start failing for customers rather than becoming more profitable. Say which models disappear before writing.
+
 ### Customers, key groups, shared subscriptions, official channels
 
 ```bash
