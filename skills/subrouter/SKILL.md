@@ -302,6 +302,14 @@ curl -s --max-redirs 0 "$BASE/api/provider/models" -H "$AUTH" -H "$AUTH_USER"   
 # input_price/output_price/fixed_price plus price_currency); to leave the price
 # alone send NO pricing field at all. A body with only some of them is read as a
 # price change with the missing ones as 0 and goes into price review.
+# Two optional markdown doc fields ride along on the same model body, and they
+# publish very differently: params_doc (the request-parameter table users read
+# in the docs page) goes live on save, while integration_guide (the whole
+# calling guide) is queued for AI review and stays invisible for about an hour.
+# Put a parameter table in params_doc, not in integration_guide. Omitting either
+# field leaves it untouched. params_doc clears with ""; integration_guide does
+# NOT — "" is refused on a custom endpoint and queues an empty draft for review
+# on a standard one, so clear it with use_standard_integration_guide: true.
 # Channels: /api/provider/channels (GET/POST/PUT/DELETE)
 
 # Bulk model maintenance (e.g. syncing upstream price changes)
