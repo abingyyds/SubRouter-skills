@@ -236,8 +236,9 @@ AUTH_USER='New-Api-User: <user_id>'
 curl -s --max-redirs 0 "$BASE/api/user/self" -H "$AUTH" -H "$AUTH_USER"
 
 # Usage reconciliation ("where did my money go")
-curl -s --max-redirs 0 "$BASE/api/log/self?p=1&page_size=20" -H "$AUTH" -H "$AUTH_USER"   # per-call logs
-curl -s --max-redirs 0 "$BASE/api/log/self/stat" -H "$AUTH" -H "$AUTH_USER"               # totals
+curl -s --max-redirs 0 "$BASE/api/log/self?cursor=first&page_size=20" -H "$AUTH" -H "$AUTH_USER"   # per-call logs, newest first; if has_more, pass next_cursor as cursor
+curl -s --max-redirs 0 "$BASE/api/log/self/stat" -H "$AUTH" -H "$AUTH_USER"               # totals (today by default)
+# Log list/stat/export default to today 00:00 → now and refuse ranges over 31 days ("时间跨度不能超过 31 天"): split longer questions into ≤31-day windows.
 curl -s --max-redirs 0 "$BASE/api/data/self" -H "$AUTH" -H "$AUTH_USER"                   # per-day quota usage
 curl -s --max-redirs 0 "$BASE/api/task/self" -H "$AUTH" -H "$AUTH_USER"                   # async media tasks
 
@@ -482,7 +483,7 @@ curl -s --max-redirs 0 "$BASE/api/distributor/official-channels" -H "$AUTH" -H "
 # PUT /official-channels/<id> — GET first to learn the record shape
 ```
 
-Read-only endpoints for questions like "how is the station doing": `GET /logs` (`p`, `page_size`, `type`, `start_timestamp`, `end_timestamp`, `model_name`, `username`, `token_name`), `/logs/stat`, `/earnings`, `/earnings/summary`, `/earnings/payouts`, `/topups`, `/redemptions`, `/invoices`, `/sub-distributors`, `/package-fund`.
+Read-only endpoints for questions like "how is the station doing": `GET /logs` (`cursor=first` then the previous `next_cursor`, `page_size`, `type`, `start_timestamp`, `end_timestamp` — at most 31 days, default today —, `model_name`, `username`, `token_name`), `/logs/stat` (same range rule), `/earnings`, `/earnings/summary`, `/earnings/payouts`, `/topups`, `/redemptions`, `/invoices`, `/sub-distributors`, `/package-fund`.
 
 ### Station endpoints you must not call
 
