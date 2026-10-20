@@ -1,6 +1,6 @@
 ---
 name: subrouter
-description: 'Connect an AI agent (Claude Code, Cursor, Codex, etc.) to SubRouter — an OpenAI/Anthropic-compatible AI API gateway with smart routing and transparent pricing. Use this skill to authorize the agent via device flow, obtain an API key, pick a model by price, and configure the client. Also lets a distributor station owner (分站站长) run their station: list or delist models, set prices, manage packages and settings. Triggers: "接入 SubRouter", "配置 SubRouter", "SubRouter API key", "用 SubRouter 的模型", "管理我的分站", "分站上架", "分站套餐".'
+description: 'Connect an AI agent to SubRouter: device authorization, API keys, model selection by price, and OpenAI/Anthropic client configuration. Manage a provider’s own model listings, pricing and primary/backup channels, or a distributor station’s listings, prices, packages and settings. Use for "接入 SubRouter", "配置 SubRouter", "SubRouter API key", "用 SubRouter 的模型", "商家模型定价", "配置备用渠道", "管理我的分站", "分站上架" or "分站套餐".'
 ---
 
 # SubRouter Agent Onboarding
@@ -287,7 +287,9 @@ Echo the exact restrictions back to the user before creating the key.
 
 ### Becoming a provider (商家) and listing models
 
-The user's account can apply to become a provider and then manage its own channels and models — all with the same `access_token`:
+The user's account can apply to become a provider and then manage its own channels and models — all with the same `access_token` and `New-Api-User` headers.
+
+For **adding or updating models, changing prices, batch imports, or primary/backup channels**, read [Provider model management](references/provider-models.md) first. It documents pricing strategies, cache-price null/zero semantics, non-mutating price preview, delayed price changes, pagination, and versioned replacement of route lists. These are merchant listing APIs, not the distributor APIs below or the official-Key market.
 
 ```bash
 # Apply to become a provider (platform review may apply)
@@ -296,13 +298,12 @@ curl -s --max-redirs 0 -X POST "$BASE/api/provider/register" -H "$AUTH" -H "$AUT
 
 # After approval, provider management lives under /api/provider/*
 curl -s --max-redirs 0 "$BASE/api/provider/self" -H "$AUTH" -H "$AUTH_USER"      # provider profile
-curl -s --max-redirs 0 "$BASE/api/provider/models" -H "$AUTH" -H "$AUTH_USER"    # listed models
-# List a model: POST /api/provider/models — GET first to learn the field shape
-# Edit a model: PUT /api/provider/models/<id>. Pricing is all-or-nothing: to change
-# the price send the COMPLETE billing block (billing_mode plus billing_expr, or
-# input_price/output_price/fixed_price plus price_currency); to leave the price
-# alone send NO pricing field at all. A body with only some of them is read as a
-# price change with the missing ones as 0 and goes into price review.
+curl -s --max-redirs 0 "$BASE/api/provider/models?page=1&page_size=50" -H "$AUTH" -H "$AUTH_USER"  # data is one page; total is at the envelope root
+# POST /api/provider/models creates; PUT /api/provider/models/<id> updates.
+# Omit all pricing fields for metadata-only edits. Partial price edits merge
+# into the saved/pending quote, but the pricing strategy can derive other prices.
+# POST /api/provider/models/price-preview calculates the proposal without saving.
+# GET/PUT /api/provider/models/<id>/routes manages ordered primary/backup targets.
 # Two optional markdown doc fields ride along on the same model body, and they
 # publish very differently: params_doc (the request-parameter table users read
 # in the docs page) goes live on save, while integration_guide (the whole

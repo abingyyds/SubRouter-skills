@@ -6,7 +6,7 @@ Agent skills for [SubRouter](https://subrouter.ai) — an OpenAI- and Anthropic-
 
 | Skill | What it does |
 |---|---|
-| [`subrouter`](skills/subrouter/SKILL.md) | Connects an agent to SubRouter end to end: device-flow authorization, API key, model selection by price, client configuration, and account management. Also lets a distributor station owner (分站站长) run their station: list or delist models, set prices, manage packages and settings. |
+| [`subrouter`](skills/subrouter/SKILL.md) | Connects an agent to SubRouter: device-flow authorization, API keys, model selection, client configuration and account management. Providers can manage model listings, pricing contracts and primary/backup channels; distributor station owners can manage listings, prices, packages and settings. |
 
 Works with Claude Code, Codex, Cursor, Zed, and any client that reads an OpenAI- or Anthropic-compatible endpoint.
 
@@ -47,12 +47,14 @@ git clone https://github.com/abingyyds/SubRouter-skills.git
 cp -r SubRouter-skills/skills/subrouter ~/.codex/skills/
 ```
 
-Single-file install without cloning:
+Manual install without cloning (keep the supporting reference alongside the entrypoint):
 
 ```bash
-mkdir -p ~/.codex/skills/subrouter
-curl -fsSL https://raw.githubusercontent.com/abingyyds/SubRouter-skills/main/skills/subrouter/SKILL.md \
+mkdir -p ~/.codex/skills/subrouter/references
+curl -fsS --max-redirs 0 https://raw.githubusercontent.com/abingyyds/SubRouter-skills/main/skills/subrouter/SKILL.md \
   -o ~/.codex/skills/subrouter/SKILL.md
+curl -fsS --max-redirs 0 https://raw.githubusercontent.com/abingyyds/SubRouter-skills/main/skills/subrouter/references/provider-models.md \
+  -o ~/.codex/skills/subrouter/references/provider-models.md
 ```
 
 Restart Codex afterwards so it picks the skill up.
@@ -68,6 +70,7 @@ Ask the agent in plain language — the skill triggers on phrases like:
 - "接入 SubRouter" / "配置 SubRouter"
 - "帮我拿一个 SubRouter API key"
 - "用 SubRouter 上最便宜的 gpt 模型"
+- "调整商家模型的缓存价格" / "给模型配置主用与备用渠道"
 - "帮我把分站上的 gpt-5.4 下架" / "给分站加一个 99 元套餐"
 
 The agent first tells you what it intends to change — and which files, by path — then runs the device authorization and waits for you to approve it in the browser. It writes nothing to disk until you agree to it, and it will not repoint an already-configured client (a Codex signed in with a ChatGPT subscription, for example) unless you ask it to.
