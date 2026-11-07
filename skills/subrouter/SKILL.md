@@ -137,16 +137,18 @@ Image and video generation take tens of seconds to several minutes. A synchronou
 
 ### Billing rules (read before generating anything)
 
-**Every successful generation is billed, including retries.** These rules are not optional:
+**A generation can be billed even when the client never receives the result.**
 
 - **One submission per user request.** Do not generate several variants, sizes or "improved" versions on your own initiative. If the user asked for one image, submit once.
-- **A retry is a new charge.** Before resubmitting after a failure, a timeout, or output the user disliked, say so explicitly — "this will bill another generation" — and get a yes. The only exception is a submission that failed before billing (a 4xx rejection with no task id).
+- **A new submission can incur another charge.** After a failure, first establish whether the request was accepted and whether a reservation or charge remains. An HTTP 4xx or missing task ID alone is insufficient evidence. Once the outcome is known, explain any additional cost and obtain confirmation before submitting another paid generation. A confirmed rejection before execution and billing can be corrected within the original request.
 - **Never discard a billed artifact.** Every completed task's output must be written to disk before you move on, including intermediate attempts the user did not end up liking. Losing a paid image because a later attempt overwrote it is a real loss of the user's money. Use distinct filenames per task id; never reuse one path across attempts.
 - **Download completed results promptly.** Upstream result URLs expire. Fetch and save as soon as `status` is `completed`; do not leave a finished task unclaimed while you do something else.
 - **Validate before submitting**, not after: check `size`/aspect ratio, duration and model capability against `/api/pricing` first. A rejected parameter after billing is money gone.
 - **Report at the end**: how many generations were submitted, the model, the size/duration, the total cost, and the absolute path of every saved file.
 
-If the connection drops mid-flow, do not resubmit. The task already exists server-side — recover it via `GET /api/task/self` (Listing past tasks, below) and download the result. This is the main reason to prefer async: a dropped sync call loses an image you already paid for.
+If an async submission or poll disconnects, keep the platform task ID and resume polling it. If the submit response was lost, check `GET /api/task/self` for a matching task before considering another submission. A missing history row does not prove that a submission failed.
+
+For a paid Ali model whose native task is served through the synchronous image endpoint, the gateway continues checking the accepted task within a bounded window after the client disconnects. A confirmed usable image is settled, a confirmed upstream failure or cancellation releases the reservation, and an unresolved outcome can retain the reservation for reconciliation. For this synchronous path, use the request ID to trace the outcome. Save the response header `X-Oneapi-Request-Id` if available, check usage, and give support the request ID or the time and model if the outcome remains unclear. Wait for reconciliation before submitting again.
 
 ### Submit
 
@@ -168,7 +170,7 @@ Answers `202 Accepted` with a `Location: /v1/tasks/{task_id}` header and a `medi
  "result":{"images":[],"videos":[]},"usage":{"quota":1234},"error":null}
 ```
 
-The `/async` facade always yields a task, even when the upstream merchant only supports synchronous calls — the gateway runs it in the background for you.
+A successful `/async` submission returns a platform task ID even when the upstream merchant supports only synchronous calls. The gateway runs those tasks in the background.
 
 Video — `POST /v1/video/generations` is already asynchronous; the request body follows the model's own schema. The response is the platform's native submit shape, but the task id in it is SubRouter's, so poll it the same way. `POST /v1/videos` is the OpenAI-compatible alias.
 
@@ -194,7 +196,7 @@ Upstream video URLs are often short-lived or geo-restricted; this endpoint strea
 
 ### Listing past tasks
 
-`GET /api/task/self` (with the access token) lists the user's media tasks — useful for recovering a task id the client lost.
+`GET /api/task/self` lists the user's asynchronous media tasks. Use the account `access_token` and `New-Api-User` headers described under Account management.
 
 ## Step 3 — Pick a model (and optionally a provider)
 
@@ -326,12 +328,24 @@ curl -s --max-redirs 0 "$BASE/api/provider/channels/<id>/fetch_models" -H "$AUTH
 # Earnings (read-only)
 curl -s --max-redirs 0 "$BASE/api/provider/earnings/summary" -H "$AUTH" -H "$AUTH_USER"
 curl -s --max-redirs 0 "$BASE/api/provider/earnings" -H "$AUTH" -H "$AUTH_USER"
+curl -s --max-redirs 0 "$BASE/api/provider/earnings/filter-summary?start_timestamp=<unix-seconds>" -H "$AUTH" -H "$AUTH_USER"
+curl -s --max-redirs 0 "$BASE/api/provider/earnings/model-breakdown?start_timestamp=<unix-seconds>" -H "$AUTH" -H "$AUTH_USER"
 curl -s --max-redirs 0 "$BASE/api/provider/payouts" -H "$AUTH" -H "$AUTH_USER"   # payout history
 ```
+
+For the next earnings page, keep the filters and pass `next_cursor.before_created_at` and `next_cursor.before_id` as `before_created_at` and `before_id` when `has_more` is true. The list, filtered totals and per-model breakdown share `start_timestamp` and `end_timestamp` (Unix seconds), exact `model_name`, positive `caller_id`, and `earning_source` (`self` or `official`). Use the same explicit time window for comparisons. Log type, request identifiers and token name filter the list only. The breakdown returns settled amounts in quota units in `data.items` and `data.summary`, with `data.updated_at`. On `provider_model_earnings_range`, narrow the window to 31 days or less. Report query failures separately from successful empty results.
 
 Withdrawing money (`POST /api/provider/payout`) is a funds operation: do NOT call it yourself — send the user to the provider console in their browser.
 
 Before submitting a provider application or changing anything that affects listings, prices, or money, state exactly what you are about to send and get the user's explicit confirmation. For bulk operations, show the full change list (model names, prices, statuses) first.
+
+### Official upstream Keys
+
+Use the provider console for official upstream credentials. A successful save or batch import queues authentication. Check for verification and completed publication before reporting supply as available. `pending` and `verifying` mean wait. If `verification_status` is `verified` and `verification_next_attempt_at` is positive, the platform is still preparing supply. For `failed`, inspect the verification message and correct the configuration. For `unsupported`, contact the platform. Authentication reads are non-billable and establish credential validity only.
+
+Replacing the Key, its address, authentication or request settings, status-code mapping, or billing credentials queues verification again. Name, price and capacity edits retain the verification state. A blank status on a legacy Key retains its existing supply eligibility. Merchant and platform enablement still apply independently.
+
+The console enables request-body passthrough by default when adding an official Key. The saved `pass_through_body_enabled` flag lives in the Key's `setting` JSON. If the upstream rejects an unknown field such as `enable_thinking` with HTTP 400, correct the client payload or choose a route that supports the field before retrying.
 
 ## Running a distributor station (分站站长)
 

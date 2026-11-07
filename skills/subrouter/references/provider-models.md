@@ -18,6 +18,12 @@ The model list returns `data` as an array and `total` at the envelope root. The 
 
 `provider_channel_id` is the merchant-channel record's `id` from `/api/provider/channels`, **not** its internal system `channel_id`. Do not show the channel's key when summarizing the selection.
 
+### Channel addresses and diagnostics
+
+Use a public HTTP(S) base URL with authentication configured separately. Omit embedded credentials and URL fragments. For an OpenAI-compatible base URL, omit the query string too. These checks apply to saved configurations when used, including redirects, DNS resolution and proxy targets. A merchant channel cannot target localhost, private networks, link-local addresses or cloud metadata endpoints. Changing a global private-address setting does not grant a merchant exception.
+
+Use `/api/provider/channels/<id>/fetch_models` and `/test` for the merchant's own channel when needed. A banned merchant cannot fetch models, run manual tests or run background probes. The merchant can still read configuration and historical earnings. A pending review or ordinary delisting alone does not block configuration and public-channel tests.
+
 ## Pricing contract
 
 `billing_mode` selects `ratio` (per-token), `per_call`, or `tiered_expr`. `pricing_strategy` is separate:
@@ -112,6 +118,39 @@ Do not tell the user that the new price is active merely because `success` is tr
 `POST /api/provider/models/batch` accepts a top-level `provider_channel_id`, `update_existing` and `models` array; at most 200 models per request. Each row uses `model_name` (`model` is also accepted), identity and the same pricing fields/strategies as above. Set `update_existing: true` only when the user approved changing matching existing listings. Omitted pricing fields preserve existing quotes on updates; explicit 0/null must be preserved.
 
 The response can contain partial success. Check `created`, `updated`, `pending`, `skipped` and the per-row `errors` under `data`; `success: true` alone is not proof every row was applied. Re-read each affected listing. Batch import is not a way to configure backups or bypass delayed/reviewed price increases.
+
+### Convert an existing listing to merchant token prices
+
+For an existing paid custom listing, the single-model edit and price preview with its ID reject a paid `tiered_expr` to `ratio` switch. Submit the complete token quote through `POST /api/provider/models/batch` with `update_existing: true`. The mode change goes through price review on the original listing.
+
+1. Read the exact listing and `GET /api/provider/models/<id>/routes`. Record the listing ID, status, category and routes. Copy the stored `model_name` and `upstream_model`. Keep any suffix already present in `model_name`. If you also send `model_suffix`, use the original suffix. The listing's upstream identity can differ from the primary route's alias. Confirm that the listing exists and the supplied identity matches it because the batch endpoint can create missing listings. Copy the stored category to preserve the listing's classification.
+2. Show the complete target quote and currency for approval. Send one row with that quote and omit the top-level `provider_channel_id` for a pricing-only change. Substitute the actual identity, category and approved prices in this example.
+
+```json
+{
+  "update_existing": true,
+  "models": [
+    {
+      "model_name": "example-chat",
+      "upstream_model": "example-chat",
+      "category": "chat",
+      "billing_mode": "ratio",
+      "billing_expr": "",
+      "pricing_strategy": "custom",
+      "price_currency": "CNY",
+      "input_price": 5.44,
+      "output_price": 27.2,
+      "fixed_price": 0,
+      "cache_read_price": 0.544,
+      "cache_creation_price": null,
+      "cache_creation_price_1h": null
+    }
+  ]
+}
+```
+
+3. For one conversion, require `data.created: 0`, `data.updated: 0`, `data.pending: 1`, `data.skipped: 0`, and `data.errors: []`. On an unexpected result, read the listing before any retry. Verify the original ID, status and route configuration, plus `pending_billing_mode: "ratio"`, `pending_price_currency`, and the requested `pending_*` prices. A pending review has `pending_price_review_status: 1` and no scheduled activation yet.
+4. The active quote remains in effect during review and the scheduled delay. After approval, use `pending_price_effective_at` for the activation time, normally three hours after approval. Read back the active billing mode and prices when due to verify that the token prices and display format took effect together.
 
 ## Ordered primary and backup channels
 
