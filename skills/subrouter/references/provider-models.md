@@ -1,5 +1,7 @@
 # Provider model listings, pricing and backup channels
 
+For ticket conversations and optional reply images, see [Support ticket message images](support-tickets.md).
+
 Use these APIs for the authenticated merchant's **own custom models**. Use `$BASE`, `$AUTH` and `$AUTH_USER` from `SKILL.md`; every call needs both the account `access_token` and `New-Api-User`. Do not substitute the model-call `sk-` key. Do not print credentials or channel secrets.
 
 Read before writing. Show the exact model, proposed prices/currency, and channel changes and obtain explicit confirmation before a mutation. A request to inspect prices or list models is not permission to change them. Price preview does not save a model or invoke a paid model; channel tests and model probes are separate operations and are not required for configuring backups.
