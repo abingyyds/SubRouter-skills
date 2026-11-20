@@ -47,10 +47,21 @@ An official-reference change does not automatically rewrite a published merchant
 | `cache_creation_price` | Cache-write price per million tokens, the 5-minute quote. Writes may cost more than ordinary input. |
 | `cache_creation_price_1h` | Independent 1-hour cache-write price per million tokens. |
 | `billing_expr`, `video_pricing` | Expression or structured video contract. Preserve the model's existing schema and units; do not infer that a video's `fixed_price` is a per-second price. |
+| `usage_defaults` | Optional model-specific normalization defaults for image/video `tiered_expr` quotes that use `u()`. Treat these defaults as part of the quote, not as descriptive metadata. |
 
 Input/output/fixed prices are stored to 6 decimal places; cache prices to 10. Preserve the preview's precision instead of rounding cheap token prices to currency-display precision. Sending `billing_expr` without `video_pricing` clears a previous structured video quote; preview that transition rather than treating it as a metadata edit.
 
 For new/custom token contracts, **0 is an explicit free cache price; `null` means no separate quote and those tokens are charged at ordinary input price**. Legacy-frozen contracts retain their historical behavior instead; use the preview to inspect a proposed strategy change. On updates, an omitted cache field retains its saved value (subject to the selected strategy); it is not the same as sending `null`. Send the cache-write durations separately rather than inventing an hour multiplier. Non-token contracts do not use these cache-price fields.
+
+### Media usage defaults
+
+Send an object such as `"usage_defaults": {"default_duration": 8, "default_resolution": "1080p"}` for a video model. Use these fields only when the upstream model's defaults are known:
+
+- `default_duration`: video only, 1–120 seconds. The platform fallback is 5 seconds.
+- `default_resolution`: use `1k`, `2k`, or `4k` for images; use `360p`, `480p`, `720p`, `768p`, `1080p`, `1440p`, `2k`, or `4k` for video. The platform fallback is `1k` for images and `720p` for video.
+- `ignore_size_for_resolution`: use `true` if the request's `size` should not be used to infer the billing resolution. It does not disable an explicit resolution.
+
+Create, update, batch, and price preview accept the object. For an existing quote, omit the field to retain its defaults, or send `null` or `{}` to clear the overrides. If you send a nonempty object, send all overrides you intend to keep; the object replaces the previous defaults. Preview returns `data.usage_defaults` as a JSON-encoded string, or `""` for platform defaults. Model reads may include `usage_defaults` for the live quote and `pending_usage_defaults` for an unpublished quote; these are also JSON-encoded strings. Changing the defaults on a published quote requires pricing review even if the expression text and unit prices are unchanged. Preview and confirm that change before saving.
 
 ### Create a custom model
 
@@ -104,7 +115,7 @@ After user confirmation, send the same pricing changes to `PUT /api/provider/mod
 
 There is **no all-or-nothing pricing-block requirement**: the server starts with the current/pending quote and applies the fields supplied. The pricing strategy can still derive linked prices, so a partial request is not a promise that just one unit price changes. Do not echo a whole GET result, `effective_*`, `pending_*` or server-generated contract metadata back as a proposed price.
 
-For a metadata-only update such as a description, omit **every** pricing field, including `pricing_strategy`, `regenerate_price`, `billing_mode`, currency, cache fields and video pricing. This leaves the existing current/pending prices alone.
+For a metadata-only update such as a description, omit **every** pricing field, including `pricing_strategy`, `regenerate_price`, `billing_mode`, currency, cache fields, video pricing and `usage_defaults`. This leaves the existing current/pending prices alone.
 
 After saving, re-read the model list and distinguish current from `pending_*` prices:
 
