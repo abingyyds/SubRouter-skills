@@ -515,6 +515,8 @@ Before any other write under `/api/distributor`, list exactly what will change �
 
 The platform also offers shared subscriptions for end users, an official-key market, invoices, 2FA/passkey management, and payment initiation. These involve credentials, purchases, or account security — do not drive them via API. When the user asks, point them to the web console (`$BASE/console`).
 
+For an official Key edit that reports a configuration conflict, reload the page and reopen the Key to retrieve its latest configuration before saving again. If the console confirms the save and says supply synchronization is pending, the configuration is already saved. Check the current supply status in the console before making another edit.
+
 ## Troubleshooting
 
 - **401 Unauthorized** — key missing/wrong, or the `sk-` prefix was dropped. Re-check the config you wrote.
