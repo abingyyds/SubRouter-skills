@@ -210,6 +210,8 @@ curl -s --max-redirs 0 "$BASE/api/marketplace/providers/<slug>"   # one provider
 curl -s --max-redirs 0 "$BASE/api/marketplace/reviews"            # provider reviews
 ```
 
+A model offer in `GET /api/marketplace/models` may include `output_tokens_per_second` (a numeric generation speed) and `output_speed_samples` (the count of valid samples). These fields appear after at least three successful, measurable text streams in the last 24 hours. Speed is total answer tokens divided by total observed answer time. For shared subscription models, the same calculation combines samples across active supplies. Treat an absent value as unavailable. Use `median_ttft` separately for reported first-token latency.
+
 Choose by the user's stated preference (cheapest, specific vendor/provider, capability). Present the top candidates with prices and let the user pick; do not guess silently.
 
 ## Step 4 — Top up (user does this, not you)
@@ -263,6 +265,8 @@ curl -s --max-redirs 0 -X POST "$BASE/api/token/" -H "$AUTH" -H "$AUTH_USER" \
   -H 'Content-Type: application/json' \
   -d '{"name":"my-project","expired_time":-1,"unlimited_quota":true}'
 ```
+
+A per-call log may include `output_tokens_per_second` in its JSON-encoded `other` field. It measures that request's answer tokens over the interval from first to last visible text, with reasoning tokens excluded. Historical rows and streams without a reliable sample omit the field.
 
 ### Model- or provider-scoped keys
 
